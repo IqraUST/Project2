@@ -9,6 +9,7 @@
     "contributors": [],
     "repository": {},
     "dependencies": {
+        "chart.js": "^4.5.1",
         "express": "^5.1.0",
         "sqlite3": "^5.1.7"
     }

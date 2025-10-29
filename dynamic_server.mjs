@@ -13,6 +13,7 @@ const template = path.join(__dirname, 'templates');
 
 let app = express();
 app.use(express.static(root));
+app.use('/chartjs', express.static(path.join(__dirname, 'node_modules/chart.js/dist')));
 
 const db = new sqlite3.Database('./nyc.db', sqlite3.OPEN_READONLY, (err) => {
     if (err){
@@ -90,14 +91,14 @@ app.get('/date/:date', (req, res) => {
         if (errorSent) return;
         if (!html_data || !sql_data) return;
 
-        console.log(`Rendering date page for ${dateParam}...`);
-
         if (sql_data.length === 0) {
             res.status(404).type('html').send(`<h1>No data found for ${dateParam}</h1>`);
             return;
         }
 
         const w = sql_data[0];
+
+        // Build table content
         const weather_info = `
         <table border="1" cellspacing="0" cellpadding="4">
             <tr><th>Actual Mean Temp</th><td>${w.actual_mean_temp}</td></tr>
@@ -112,37 +113,56 @@ app.get('/date/:date', (req, res) => {
             <tr><th>Record Precipitation</th><td>${w.record_precipitation}</td></tr>
         </table>`;
 
+        // Compute previous and next dates
+        const prevDate = new Date(dateParam);
+        prevDate.setDate(prevDate.getDate() - 1);
+        const nextDate = new Date(dateParam);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const formatDate = (d) => d.toISOString().split('T')[0];
+
+        // Data for Chart.js
+        const chart_data = {
+            date: dateParam,
+            prevDate: formatDate(prevDate),
+            nextDate: formatDate(nextDate),
+            actual_mean_temp: w.actual_mean_temp,
+            actual_min_temp: w.actual_min_temp,
+            actual_max_temp: w.actual_max_temp,
+            average_min_temp: w.average_min_temp,
+            average_max_temp: w.average_max_temp
+        };
+
+        // Build final HTML
         const html_response = html_data
             .toString()
             .replace('$$$DATE$$$', dateParam)
-            .replace('$$$WEATHER_INFO$$$', weather_info);
+            .replace('$$$WEATHER_INFO$$$', weather_info)
+            .replace('$$$CHART_DATA$$$', JSON.stringify(chart_data));
 
         res.status(200).type('html').send(html_response);
     };
 
+    // Read HTML template
     fs.readFile(path.join(template, 'date.html'), (err, data) => {
         if (err) {
-            console.error("Template read error:", err);
+            console.error('Template read error:', err);
             res.status(500).type('txt').send('Template read error');
             errorSent = true;
             return;
         }
-        console.log("Template loaded");
         html_data = data;
         sendResponse();
     });
 
+    // Query weather data
     const sql = 'SELECT * FROM Weather WHERE date = ?';
-    console.log(`Running query for date: ${dateParam}`);
-
     db.all(sql, [dateParam], (err, rows) => {
         if (err) {
-            console.error("SQL Error:", err);
+            console.error('SQL Error:', err);
             res.status(500).type('txt').send('SQL Error');
             errorSent = true;
             return;
         }
-        console.log(`SQL query returned ${rows.length} rows`);
         sql_data = rows;
         sendResponse();
     });
